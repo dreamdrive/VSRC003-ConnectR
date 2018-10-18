@@ -30,6 +30,25 @@
 
 Dynamixel Dxl(DXL_BUS_SERIAL1);
 
+#define NUM_ACTUATOR        17 // Number of actuator
+#define CONTROL_PERIOD      (1000) // msec (Large value is more slow)
+#define MAX_POSITION        1023
+#define GOAL_SPEED          32
+#define GOAL_POSITION       30
+
+word  AmpPos = 512;
+word  wPresentPos;
+//word  GoalPos = 512;
+word  GoalPos[NUM_ACTUATOR];
+byte  id[NUM_ACTUATOR];
+byte  i;
+
+
+
+
+
+  int led=0;
+
 /* Control table defines */
 
 //送受信バッファのサイズ
@@ -49,50 +68,103 @@ void setup() {
   Dxl.begin(3);
   Dxl.jointMode(ID_NUM); //jointMode() is to use position mode
   
+  
+  
+    // Dynamixel 2.0 Baudrate -> 0: 9600, 1: 57600, 2: 115200, 3: 1Mbps 
+  Dxl.begin(3);
+  //Insert dynamixel ID number to array id[]
+  for(i=0; i<NUM_ACTUATOR; i++ ){
+    id[i] = i+1;
+    GoalPos[i] = 512;  //Ampposでも可
+  }
+  
+  //Set all dynamixels as same condition.
+  Dxl.writeWord( BROADCAST_ID, GOAL_SPEED, 0 );
+  Dxl.writeWord( BROADCAST_ID, GOAL_POSITION, AmpPos );
+  
+  
+  
+    pinMode(BOARD_LED_PIN, OUTPUT);
 }
 
 void loop() {
-  volatile int error1 = 0 , error2 = 0;
-  short sv1[8],sv2[8];
+  volatile int error1 = 0 , error2 = 0 , error3 = 0;
+  short sv1[8],sv2[8],sv3[4];
 
-  error1 = get_memmap8(43,sv1);
-  error2 = get_memmap8(51,sv2);
+  error1 = get_memmap8(0,sv1);
+  error2 = get_memmap8(8,sv2);
+  error3 = get_memmap4(16,sv3);
+  
+  led = 1-led;
+  digitalWrite(BOARD_LED_PIN, led); // set to as HIGH LED is turn-off
+  
+  
+  
+  // サーボ書き込み ******************
+  
+  /*initPacket method needs ID and instruction*/
+  Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
+  /* From now, insert byte data to packet without any index or data length*/
+  Dxl.pushByte(GOAL_POSITION);
+  Dxl.pushByte(2);
+  //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
+  for( i=0; i<NUM_ACTUATOR; i++ ){
+    Dxl.pushByte(id[i]);
+    Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
+    Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
+  }
+  // 書き込み/* just transfer packet to dxl bus without any arguments*/
+  Dxl.flushPacket();
+  
+  //書き込み時のエラー処理
+  if(!Dxl.getResult()){
+    //SerialUSB.println("Comm Fail");
+  }
+  // サーボ書き込みここまで ****************** 
+  
+  
+  
+  
+  
+  
   
   if ((error1 == 0)&&(error2 == 0)){
-  
     
-    SerialUSB.print(sv1[0], DEC);
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv1[1], DEC); 
-    SerialUSB.print(" | ");
-    SerialUSB.print(sv1[2], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv1[3], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv1[4], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv1[5], DEC); 
-    SerialUSB.print(" | ");
-    SerialUSB.print(sv1[6], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv1[7], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv2[0], DEC);
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv2[1], DEC); 
-    SerialUSB.print(" | ");
-    SerialUSB.print(sv2[2], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv2[3], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv2[4], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.print(sv2[5], DEC); 
-    SerialUSB.print(" | ");
-    SerialUSB.print(sv2[6], DEC); 
-    SerialUSB.print(" | ");       
-    SerialUSB.println(sv2[7], DEC); 
     
+//  
+//    
+//    SerialUSB.print(sv1[0], DEC);
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv1[1], DEC); 
+//    SerialUSB.print(" | ");
+//    SerialUSB.print(sv1[2], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv1[3], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv1[4], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv1[5], DEC); 
+//    SerialUSB.print(" | ");
+//    SerialUSB.print(sv1[6], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv1[7], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv2[0], DEC);
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv2[1], DEC); 
+//    SerialUSB.print(" | ");
+//    SerialUSB.print(sv2[2], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv2[3], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv2[4], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.print(sv2[5], DEC); 
+//    SerialUSB.print(" | ");
+//    SerialUSB.print(sv2[6], DEC); 
+//    SerialUSB.print(" | ");       
+//    SerialUSB.println(sv2[7], DEC); 
+//    
     
   }
   
