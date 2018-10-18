@@ -1,54 +1,26 @@
 
 /* Minimum_Source*/
 #include <stdio.h>
-/* Dynamixel Basic Position Control Example
- 
- Turns left the dynamixel , then turn right for one second,
- repeatedly.
- 
-                   Compatibility
- CM900                  O
- OpenCM9.04             O
- 
-                  Dynamixel Compatibility
-               AX    MX      RX    XL-320    Pro
- CM900          O      O      O        O      X
- OpenCM9.04     O      O      O        O      X
- **** OpenCM 485 EXP board is needed to use 4 pin Dynamixel and Pro Series ****
- 
- created 16 Nov 2012
- by ROBOTIS CO,.LTD.
- */
+
 /* Serial device defines for dxl bus */
 #define DXL_BUS_SERIAL1 1  //Dynamixel on Serial1(USART1)  <-OpenCM9.04
-#define DXL_BUS_SERIAL2 2  //Dynamixel on Serial2(USART2)  <-LN101,BT210
-#define DXL_BUS_SERIAL3 3  //Dynamixel on Serial3(USART3)  <-OpenCM 485EXP
-/* Dynamixel ID defines */
-#define ID_NUM 1
-/* Control table defines */
-#define GOAL_POSITION 30
-
 Dynamixel Dxl(DXL_BUS_SERIAL1);
 
 #define NUM_ACTUATOR        17 // Number of actuator
 #define CONTROL_PERIOD      (1000) // msec (Large value is more slow)
-#define MAX_POSITION        1023
-#define GOAL_SPEED          32
-#define GOAL_POSITION       30
+#define MAX_POSITION        1023 // 最大値
+#define GOAL_SPEED          32  // GOAL_SPEEDのアドレス
+#define GOAL_POSITION       30  // GOAL_POSITIONのアドレス
 
-word  AmpPos = 512;
-word  wPresentPos;
-//word  GoalPos = 512;
-word  GoalPos[NUM_ACTUATOR];
+word  AmpPos = 512;    // 初期位置
+word  GoalPos[NUM_ACTUATOR]; // 目標位置
 byte  id[NUM_ACTUATOR];
 byte  i;
 
-
-
-
-
-  int led=0;
-
+int led = 0;
+int eyeH = 0;
+int eyeSV = 0;
+int torqueF = 0;
 /* Control table defines */
 
 //送受信バッファのサイズ
@@ -60,46 +32,57 @@ int get_memmap8(unsigned char map_add , short value[]);
 short get_memmap(unsigned char map_add);
 
 void setup() {
-  // put your setup code here, to run once:
+  // VS-RC003と接続するシリアルの初期化
   Serial3.begin(115200);
-
   
   // Dynamixel 2.0 Baudrate -> 0: 9600, 1: 57600, 2: 115200, 3: 1Mbps 
   Dxl.begin(3);
-  Dxl.jointMode(ID_NUM); //jointMode() is to use position mode
   
-  
-  
-    // Dynamixel 2.0 Baudrate -> 0: 9600, 1: 57600, 2: 115200, 3: 1Mbps 
-  Dxl.begin(3);
   //Insert dynamixel ID number to array id[]
   for(i=0; i<NUM_ACTUATOR; i++ ){
-    id[i] = i+1;
-    GoalPos[i] = 512;  //Ampposでも可
+    id[i] = i + 1;
+    GoalPos[i] = AmpPos;  // ゴールポジションを初期位置で初期化
   }
   
   //Set all dynamixels as same condition.
   Dxl.writeWord( BROADCAST_ID, GOAL_SPEED, 0 );
   Dxl.writeWord( BROADCAST_ID, GOAL_POSITION, AmpPos );
   
-  
-  
-    pinMode(BOARD_LED_PIN, OUTPUT);
+  //処理速度を測るピン
+  pinMode(BOARD_LED_PIN, OUTPUT);
 }
 
 void loop() {
-  volatile int error1 = 0 , error2 = 0 , error3 = 0;
+  int error = 0 , i = 0;
   short sv1[8],sv2[8],sv3[4];
 
-  error1 = get_memmap8(0,sv1);
-  error2 = get_memmap8(8,sv2);
-  error3 = get_memmap4(16,sv3);
+  error = get_memmap8(0,sv1);
+  if (error==0){
+    for(i=0; i < 8; i++ ){
+      GoalPos[i]= (word)sv1[i];
+    }
+  }
+  
+  error = get_memmap8(8,sv2);
+  if (error==0){
+    for(i=0; i < 8; i++ ){
+      GoalPos[i+8]= (word)sv2[i];
+    }
+  }
+
+  error = get_memmap4(59,sv3);
+  if (error==0){
+     GoalPos[16]= (word)sv3[0];
+     eyeH = sv3[1];
+     eyeSV = sv3[2];
+     torqueF = sv3[3];
+  }
+  
+  SerialUSB.println(torqueF); 
   
   led = 1-led;
   digitalWrite(BOARD_LED_PIN, led); // set to as HIGH LED is turn-off
-  
-  
-  
+   
   // サーボ書き込み ******************
   
   /*initPacket method needs ID and instruction*/
@@ -113,62 +96,15 @@ void loop() {
     Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
     Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
   }
-  // 書き込み/* just transfer packet to dxl bus without any arguments*/
+  // 書き込み
   Dxl.flushPacket();
   
   //書き込み時のエラー処理
   if(!Dxl.getResult()){
-    //SerialUSB.println("Comm Fail");
+    // なにか処理する場合はここに書く
   }
   // サーボ書き込みここまで ****************** 
   
-  
-  
-  
-  
-  
-  
-  if ((error1 == 0)&&(error2 == 0)){
-    
-    
-//  
-//    
-//    SerialUSB.print(sv1[0], DEC);
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv1[1], DEC); 
-//    SerialUSB.print(" | ");
-//    SerialUSB.print(sv1[2], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv1[3], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv1[4], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv1[5], DEC); 
-//    SerialUSB.print(" | ");
-//    SerialUSB.print(sv1[6], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv1[7], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv2[0], DEC);
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv2[1], DEC); 
-//    SerialUSB.print(" | ");
-//    SerialUSB.print(sv2[2], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv2[3], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv2[4], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.print(sv2[5], DEC); 
-//    SerialUSB.print(" | ");
-//    SerialUSB.print(sv2[6], DEC); 
-//    SerialUSB.print(" | ");       
-//    SerialUSB.println(sv2[7], DEC); 
-//    
-    
-  }
-  
-    
   //delay(10);
 }
 
