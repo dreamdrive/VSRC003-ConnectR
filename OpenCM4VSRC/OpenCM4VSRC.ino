@@ -20,7 +20,7 @@ byte  i;
 int led = 0;
 int eyeH = 0;
 int eyeSV = 0;
-int torqueF = 0;
+unsigned int torqueF = 0;
 /* Control table defines */
 
 //送受信バッファのサイズ
@@ -77,34 +77,43 @@ void loop() {
      eyeSV = sv3[2];
      torqueF = sv3[3];
   }
+
   
-  SerialUSB.println(torqueF); 
+
   
   led = 1-led;
   digitalWrite(BOARD_LED_PIN, led); // set to as HIGH LED is turn-off
-   
-  // サーボ書き込み ******************
+
   
-  /*initPacket method needs ID and instruction*/
-  Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
-  /* From now, insert byte data to packet without any index or data length*/
-  Dxl.pushByte(GOAL_POSITION);
-  Dxl.pushByte(2);
-  //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
-  for( i=0; i<NUM_ACTUATOR; i++ ){
-    Dxl.pushByte(id[i]);
-    Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
-    Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
+  if (torqueF == 0){  // トルクオンの時
+     
+    // サーボ書き込み ******************
+      /*initPacket method needs ID and instruction*/
+    Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
+    /* From now, insert byte data to packet without any index or data length*/
+    Dxl.pushByte(GOAL_POSITION);
+    Dxl.pushByte(2);
+    //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
+    for( i=0; i<NUM_ACTUATOR; i++ ){
+      Dxl.pushByte(id[i]);
+      Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
+      Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
+    }
+    // 書き込み
+    Dxl.flushPacket();
+    
+    //書き込み時のエラー処理
+    if(!Dxl.getResult()){
+      // なにか処理する場合はここに書く
+    }
+    // サーボ書き込みここまで ****************** 
   }
-  // 書き込み
-  Dxl.flushPacket();
+  else{  // トルクオフのとき
+    
+    
   
-  //書き込み時のエラー処理
-  if(!Dxl.getResult()){
-    // なにか処理する場合はここに書く
   }
-  // サーボ書き込みここまで ****************** 
-  
+    
   //delay(10);
 }
 
