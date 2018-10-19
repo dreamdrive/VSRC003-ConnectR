@@ -28,7 +28,7 @@ word  GoalPos[NUM_ACTUATOR]; // 目標位置
 byte  id[NUM_ACTUATOR]; // 使用するIDの配列
 
 // 基板上のLEDのフラグ
-int led = 0;
+int led_chk = 0;
 
 // ロボットの目のLED
 int eyeLed_R = 0;
@@ -45,6 +45,10 @@ Dynamixel Dxl(DXL_BUS_SERIAL1);
 void sendmessage(char *wbuf, char *rbuf);
 int get_memmap8(unsigned char map_add , short value[]);
 short get_memmap(unsigned char map_add);
+
+////////////////////////////////////////////////////////////////
+//    setup !
+////////////////////////////////////////////////////////////////
 
 void setup() {
   
@@ -70,17 +74,23 @@ void setup() {
   pinMode(BOARD_LED_PIN, OUTPUT);
 }
 
+////////////////////////////////////////////////////////////////
+//    loop !
+////////////////////////////////////////////////////////////////
+
 void loop() {
   int error = 0 , i = 0;
   short sv1[8],sv2[8],sv3[8];
 
+  //アドレス:0～7の読み出し
   error = get_memmap8(0,sv1);
   if (error==0){
     for(i=0; i < 8; i++ ){
       GoalPos[i]= (word)sv1[i];
     }
   }
-  
+
+  //アドレス:8～15の読み出し  
   error = get_memmap8(8,sv2);
   if (error==0){
     for(i=0; i < 8; i++ ){
@@ -88,6 +98,7 @@ void loop() {
     }
   }
 
+  //アドレス:55～62の読み出し  
   error = get_memmap8(55,sv3);
   if (error==0){
      GoalPos[16]= (word)sv3[0];
@@ -98,16 +109,14 @@ void loop() {
   }
 
   // １ループごとに点灯／消灯…(オシロで見たときに1ループの実測処理時間が分かる)
-  led = 1-led;
-  digitalWrite(BOARD_LED_PIN, led); // set to as HIGH LED is turn-off
+  led_chk = 1 - led_chk;
+  digitalWrite(BOARD_LED_PIN, led_chk);
 
-  
-  if (torqueF == 0){  // トルクオンの時
+
+  if (torqueF == 0){  // アドレス62の脱力判定がすべて0(脱力なし)の時
      
     // サーボ書き込み ******************
-      /*initPacket method needs ID and instruction*/
     Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
-    /* From now, insert byte data to packet without any index or data length*/
     Dxl.pushByte(GOAL_POSITION);
     Dxl.pushByte(2);
     //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
@@ -116,21 +125,19 @@ void loop() {
       Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
       Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
     }
-    // 書き込み
-    Dxl.flushPacket();
+    Dxl.flushPacket();    // 書き込み
     
     //書き込み時のエラー処理
     if(!Dxl.getResult()){
       // なにか処理する場合はここに書く
     }
     // サーボ書き込みここまで ****************** 
+    
   }
-  else{  // トルクオフのとき
+  else{  // 脱力指定が1つでもあるとき
     
     // サーボ書き込み ******************
-    /*initPacket method needs ID and instruction*/
     Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
-    /* From now, insert byte data to packet without any index or data length*/
     Dxl.pushByte(TORQUE_ENABLE);
     Dxl.pushByte(1);
     //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
@@ -138,20 +145,18 @@ void loop() {
       Dxl.pushByte(id[i]);
       Dxl.pushByte(0x00);
     }
-    // 書き込み
-    Dxl.flushPacket();
+    Dxl.flushPacket();    // 書き込み
     
     //書き込み時のエラー処理
     if(!Dxl.getResult()){
       // なにか処理する場合はここに書く
     }
     // サーボ書き込みここまで ****************** 
+
   }
     
   //delay(10);  いろいろタイムアウト待ちの処理があるのでわざわざ待ち時間を設けるのを廃止
 }
-
-
 
 ////////////////////////////////////////////////////////////////
 //	get_memmap8関数
@@ -168,11 +173,9 @@ void loop() {
 int get_memmap8(unsigned char map_add , short value[]) {
 	char rbuf[BUFF_SZ], wbuf[BUFF_SZ], rbuf2[BUFF_SZ];
         char outputc0[5],outputc1[5],outputc2[5],outputc3[5],outputc4[5],outputc5[5],outputc6[5],outputc7[5];
-	//short value;
 	int pos_sharp = 0, i ,length;
-        short tempp;
-
-	//送受信メッセージバッファのクリア
+  
+	//送受信メッセージバッファのクリア (これやっておかないと悲惨)
        for(i = 0; i < BUFF_SZ; i++) {
             wbuf[i]=0;
             rbuf[i]=0;
@@ -200,14 +203,13 @@ int get_memmap8(unsigned char map_add , short value[]) {
         
         length = i;
               
-        // 返答の長さが適切かどうか
+        // エラーチェック（返答の長さが適切かどうか）
         if(length != 58) return -1;
    
         // エラーチェック(送ったアドレスと受信したアドレスが一致しているか)
         if(!((wbuf[2]==rbuf2[1]) && (wbuf[3]==rbuf2[2]) && (wbuf[4]==rbuf2[3]) && (wbuf[5]==rbuf2[4]) && (wbuf[6]==rbuf2[5]) && (wbuf[7]==rbuf2[6]))) return -1;
         
-        
-        // ビッグエンディアン：リトルエンディアン並び替え
+        // ビッグエンディアン／リトルエンディアン並び替え（しかも文字で ()  ()sass！）
 	outputc0[0] = rbuf2[11];
 	outputc0[1] = rbuf2[12];
 	outputc0[2] = rbuf2[8];
@@ -256,7 +258,7 @@ int get_memmap8(unsigned char map_add , short value[]) {
 	outputc7[3] = rbuf2[51];
 	outputc7[4] = 0;
 
-	//16進数を数値に変換 -> short(2byte)に格納
+	//16進数を数値に変換 -> short(2byte)に格納 (ここの処理の時間、一度チェックした方がいいかも)
 	value[0] = strtol(outputc0, NULL, 16);
 	value[1] = strtol(outputc1, NULL, 16);
 	value[2] = strtol(outputc2, NULL, 16);
@@ -346,18 +348,15 @@ void sendmessage(char *wbuf, char *rbuf){
 	int i = 0, cr_num = 0;
         long j = 0;
 
-        Serial3.flush();  // 受信バッファクリア
+        Serial3.flush();  // 受信バッファクリア（前回送受信に失敗してたら残ってる受信バッファのゴミをクリア）
 
-	//メッセージの送信
-        Serial3.print(wbuf);
-        //if (!WriteFile(hCom, wbuf, (int)strlen(wbuf), &wn, NULL)) werr = TRUE;
+        Serial3.print(wbuf);	//メッセージの送信
 
 	//メッセージの受信
 	//メッセージの最後まで1byteずつ読み込みを行なう
 	//メッセージの最後の判断は、2回目に改行('\n')が登場する場所。1回目は送信メッセージ、2回目はCPUボードが付記するもの
 	//また、受信がタイムアウトを迎えた場合もループを抜ける
 	while (rn) {
-		//if (!ReadFile(hCom, &rbuf[i], 1, &rn, NULL)) { rerr = TRUE; break; }
                 if(Serial3.available() > 0){
                   rbuf[i] = (char)Serial3.read();
                   if (rbuf[i] == '\n') cr_num++;
@@ -390,12 +389,14 @@ void debug_print(char *wbuf, char *rbuf){
             rbuf_d[i] = 0;  // デバッグ用
         }
 
+	//表示用に整形
 	for (i = 0; wbuf[i] != '\0'; i++) {
                 wbuf_d[i] = wbuf[i];    // デバッグ用
                 if (wbuf[i] == '\n') wbuf_d[i]='N';    // デバッグ用
                 if (wbuf[i] == '\r') wbuf_d[i]='R';    // デバッグ用  
 	}
 
+	//表示用に整形
 	for (i = 0; rbuf[i] != '\0'; i++) {
                 rbuf_d[i] = rbuf[i];    // デバッグ用
                 if (rbuf[i] == '\n') rbuf_d[i]='N';    // デバッグ用
