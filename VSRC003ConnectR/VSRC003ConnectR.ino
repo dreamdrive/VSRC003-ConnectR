@@ -1,4 +1,6 @@
 //
+// VSRC003-ConnectR
+//
 // VS-RC003のメモリをシリアル通信で参照して、アドレスの値をDynamixelにシンクライトパケットで送信する
 // 製作者 : Onomichi Hirokazu = みっちー ( http://dream-drive.net )
 // 
