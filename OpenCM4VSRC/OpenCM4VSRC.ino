@@ -1,37 +1,55 @@
+//
+// VS-RC003のメモリをシリアル通信で参照して、アドレスの値をDynamixelにシンクライトパケットで送信する
+// 製作者 : Onomichi Hirokazu = みっちー ( http://dream-drive.net )
+// 
+// (接続) VS-RC003のコマンドポートの(TxD、RxD、GND)を、OpenCM 9.0.4のシリアルポート3(TxD、Rxd、GND)に接続する
+// Open CM 9.0.4には電源とROBOTISのDynamixelを接続する
+// このプログラムを書き込んで、VS-RC003には、別フォルダのプロジェクトファイルから起動する
+// あとは、適当に適宜プログラムを書き換えたり、RobovieMakerでモーションを作ったり。
+// アドレス56～61は、Dynamixelに振ってもいいし、他の用途で使ってもOK / 最大モーターは23個となります。
+//
+// 脱力指示はモーター単位ではなく、0～15のアドレスに対応するサーボを１つでも脱力させるとすべてのサーボが脱力します。
+//
 
-/* Minimum_Source*/
 #include <stdio.h>
 
 /* Serial device defines for dxl bus */
 #define DXL_BUS_SERIAL1 1  //Dynamixel on Serial1(USART1)  <-OpenCM9.04
-Dynamixel Dxl(DXL_BUS_SERIAL1);
 
 #define NUM_ACTUATOR        17 // Number of actuator
-#define CONTROL_PERIOD      (1000) // msec (Large value is more slow)
 #define MAX_POSITION        1023 // 最大値
 #define GOAL_SPEED          32  // GOAL_SPEEDのアドレス
 #define GOAL_POSITION       30  // GOAL_POSITIONのアドレス
+#define TORQUE_ENABLE       24  // TORQUE_ENABLEのアドレス
+#define	BUFF_SZ	          (256) //送受信バッファのサイズ
 
 word  AmpPos = 512;    // 初期位置
 word  GoalPos[NUM_ACTUATOR]; // 目標位置
-byte  id[NUM_ACTUATOR];
-byte  i;
+byte  id[NUM_ACTUATOR]; // 使用するIDの配列
 
+// 基板上のLEDのフラグ
 int led = 0;
-int eyeH = 0;
-int eyeSV = 0;
+
+// ロボットの目のLED
+int eyeLed_R = 0;
+int eyeLed_G = 0;
+int eyeLed_B = 0;
+
+// 脱力指示のフラグ
 unsigned int torqueF = 0;
-/* Control table defines */
 
-//送受信バッファのサイズ
-#define	BUFF_SZ	(256)
+// Dynamixel宣言
+Dynamixel Dxl(DXL_BUS_SERIAL1);
 
+// 関数宣言
 void sendmessage(char *wbuf, char *rbuf);
-int get_memmap4(unsigned char map_add , short value[]);
 int get_memmap8(unsigned char map_add , short value[]);
 short get_memmap(unsigned char map_add);
 
 void setup() {
+  
+  int i = 0;
+  
   // VS-RC003と接続するシリアルの初期化
   Serial3.begin(115200);
   
@@ -54,7 +72,7 @@ void setup() {
 
 void loop() {
   int error = 0 , i = 0;
-  short sv1[8],sv2[8],sv3[4];
+  short sv1[8],sv2[8],sv3[8];
 
   error = get_memmap8(0,sv1);
   if (error==0){
@@ -70,17 +88,16 @@ void loop() {
     }
   }
 
-  error = get_memmap4(59,sv3);
+  error = get_memmap8(55,sv3);
   if (error==0){
      GoalPos[16]= (word)sv3[0];
-     eyeH = sv3[1];
-     eyeSV = sv3[2];
-     torqueF = sv3[3];
+     eyeLed_R = sv3[4];   
+     eyeLed_G = sv3[5];
+     eyeLed_B = sv3[6];
+     torqueF = sv3[7];    // アドレス62の脱力判定アドレス
   }
 
-  
-
-  
+  // １ループごとに点灯／消灯…(オシロで見たときに1ループの実測処理時間が分かる)
   led = 1-led;
   digitalWrite(BOARD_LED_PIN, led); // set to as HIGH LED is turn-off
 
@@ -110,97 +127,28 @@ void loop() {
   }
   else{  // トルクオフのとき
     
+    // サーボ書き込み ******************
+    /*initPacket method needs ID and instruction*/
+    Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
+    /* From now, insert byte data to packet without any index or data length*/
+    Dxl.pushByte(TORQUE_ENABLE);
+    Dxl.pushByte(1);
+    //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
+    for( i=0; i<NUM_ACTUATOR; i++ ){
+      Dxl.pushByte(id[i]);
+      Dxl.pushByte(0x00);
+    }
+    // 書き込み
+    Dxl.flushPacket();
     
-  
+    //書き込み時のエラー処理
+    if(!Dxl.getResult()){
+      // なにか処理する場合はここに書く
+    }
+    // サーボ書き込みここまで ****************** 
   }
     
-  //delay(10);
-}
-
-
-////////////////////////////////////////////////////////////////
-//	get_memmap4関数
-//	メモリマップのアドレスを指定して、8アドレス分の値を読む関数
-//      1～4個取得と8個取得でパケットが変わることに注意！！
-//	
-//	・引数
-//		unsigned char map_add 読み出したいメモリマップのアドレス0～255
-//              short value[] 値を返すための配列変数8個分
-//
-//	・戻り値
-//		正常終了は0、異常終了は-1
-////////////////////////////////////////////////////////////////
-
-int get_memmap4(unsigned char map_add , short value[]) {
-	char rbuf[BUFF_SZ], wbuf[BUFF_SZ], rbuf2[BUFF_SZ];
-        char outputc0[5],outputc1[5],outputc2[5],outputc3[5];
-	//short value;
-	int pos_sharp = 0, i ,length;
-
-	//送受信メッセージバッファのクリア
-       for(i = 0; i < BUFF_SZ; i++) {
-            wbuf[i]=0;
-            rbuf[i]=0;
-            rbuf2[i]=0;
-        }
-
-	//rコマンドのメッセージを作成
-	sprintf(wbuf, "r 20%04X 08\r\n", (2048 + (map_add * 2)));
-
-	//送受信！
-	sendmessage(wbuf, rbuf);
-
-	//受信結果を整形
-	if (rbuf[0] == '\0') rbuf[0] = ' ';
-
-	for (i = 0; rbuf[i] != '\0'; i++) {
-		if (rbuf[i] == '#') pos_sharp = i;
-	}
-
-	for (i = 0; rbuf[i + pos_sharp] != '\0'; i++) {
-		rbuf2[i] = rbuf[pos_sharp + i];
-	}
-
-        //debug_print(wbuf, rbuf);  // デバッグ表示
-
-        length = i;
-        if(length != 34) return -1;
-        // 返答の長さが適切かどうか
-     
-        // エラーチェック(送ったアドレスと受信したアドレスが一致しているか)
-        if(!((wbuf[2]==rbuf2[1]) && (wbuf[3]==rbuf2[2]) && (wbuf[4]==rbuf2[3]) && (wbuf[5]==rbuf2[4]) && (wbuf[6]==rbuf2[5]) && (wbuf[7]==rbuf2[6]))) return -1;
-        
-	outputc0[0] = rbuf2[11];
-	outputc0[1] = rbuf2[12];
-	outputc0[2] = rbuf2[8];
-	outputc0[3] = rbuf2[9];
-	outputc0[4] = 0;
-
-	outputc1[0] = rbuf2[17];
-	outputc1[1] = rbuf2[18];
-	outputc1[2] = rbuf2[14];
-	outputc1[3] = rbuf2[15];
-	outputc1[4] = 0;
-
-	outputc2[0] = rbuf2[23];
-	outputc2[1] = rbuf2[24];
-	outputc2[2] = rbuf2[20];
-	outputc2[3] = rbuf2[21];
-	outputc2[4] = 0;
-
-	outputc3[0] = rbuf2[29];
-	outputc3[1] = rbuf2[30];
-	outputc3[2] = rbuf2[26];
-	outputc3[3] = rbuf2[27];
-	outputc3[4] = 0;
-
-	//16進数を数値に変換 -> short(2byte)に格納
-	value[0] = strtol(outputc0, NULL, 16);
-	value[1] = strtol(outputc1, NULL, 16);
-	value[2] = strtol(outputc2, NULL, 16);
-	value[3] = strtol(outputc3, NULL, 16);
-
-      	return 0;
+  //delay(10);  いろいろタイムアウト待ちの処理があるのでわざわざ待ち時間を設けるのを廃止
 }
 
 
@@ -258,6 +206,8 @@ int get_memmap8(unsigned char map_add , short value[]) {
         // エラーチェック(送ったアドレスと受信したアドレスが一致しているか)
         if(!((wbuf[2]==rbuf2[1]) && (wbuf[3]==rbuf2[2]) && (wbuf[4]==rbuf2[3]) && (wbuf[5]==rbuf2[4]) && (wbuf[6]==rbuf2[5]) && (wbuf[7]==rbuf2[6]))) return -1;
         
+        
+        // ビッグエンディアン：リトルエンディアン並び替え
 	outputc0[0] = rbuf2[11];
 	outputc0[1] = rbuf2[12];
 	outputc0[2] = rbuf2[8];
@@ -424,6 +374,12 @@ void sendmessage(char *wbuf, char *rbuf){
         
 }
 
+////////////////////////////////////////////////////////////////
+//
+// debug_print
+// 送受信したパケットを2行に表示（改行コードを'R'と'N'に置換)
+//
+////////////////////////////////////////////////////////////////
 void debug_print(char *wbuf, char *rbuf){
  	char wbuf_d[BUFF_SZ],rbuf_d[BUFF_SZ];
 	int i;
@@ -447,7 +403,7 @@ void debug_print(char *wbuf, char *rbuf){
 	}
 
         SerialUSB.print("TX >> ");   
-        SerialUSB.print(wbuf);       
+        SerialUSB.println(wbuf_d);       
         SerialUSB.print("RX << ");
         SerialUSB.println(rbuf_d); 
 }
