@@ -1,5 +1,5 @@
 # VSRC003-ConnectR
-VS-RC003とOpenCM9.0.4を繋いで、ROBOTISのコマンドサーボをRobovieMakerから制御するサンプルソースとプロジェクトファイル  
+VS-RC003とOpenCM9.0.4を繋いで、ROBOTISのコマンドサーボをRobovieMaker2から制御するサンプルソースとプロジェクトファイル  
 製作者 : Onomichi Hirokazu = みっちー ( http://dream-drive.net )
 
 ## もう少し詳しく説明すると・・・
