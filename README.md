@@ -13,10 +13,10 @@ VS-RC003のコマンドポートの(TxD、RxD、GND)を、OpenCM 9.0.4のシリ�
 Open CM 9.0.4には電源とROBOTISのDynamixel(IDは事前に01～17を設定)を接続する  
 
 ## 使い方
-1. OpenCM9.0.4にOpenCM4VSRC.inoにそのまま書き込む  
+1. OpenCM9.0.4にVSRC003ConnectR.inoにそのまま書き込む  
 2. VS-RC003には、VSRC2OpenCM.rpjのプロジェクトファイルを開きCPU情報を書き込む
 
-あとは、適当にRobovieMakerをいじくると、接続されたDynamixelが動きます。
+あとは、適当にRobovieMaker2でいじくると、接続されたDynamixelが動きます。
 
 ## いじくりかた
 とりあえず、ロボットの目をフルカラーLEDで光らせようと思ってアドレス59～61は確保しています。
