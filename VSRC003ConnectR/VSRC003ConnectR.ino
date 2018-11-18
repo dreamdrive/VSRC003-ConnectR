@@ -8,9 +8,7 @@
 // Open CM 9.0.4には電源とROBOTISのDynamixelを接続する
 // このプログラムを書き込んで、VS-RC003には、別フォルダのプロジェクトファイルから起動する
 // あとは、適当に適宜プログラムを書き換えたり、RobovieMakerでモーションを作ったり。
-// アドレス56～61は、Dynamixelに振ってもいいし、他の用途で使ってもOK / 最大モーターは23個となります。
-//
-// 脱力指示はモーター単位ではなく、0～15のアドレスに対応するサーボを１つでも脱力させるとすべてのサーボが脱力します。
+// このサンプルでは、使用できるモーターが最大モーターは16個となります。(モーター数と制御周期がトレードオフになります。）
 //
 
 #include <stdio.h>
@@ -18,7 +16,7 @@
 /* Serial device defines for dxl bus */
 #define DXL_BUS_SERIAL1 1  //Dynamixel on Serial1(USART1)  <-OpenCM9.04
 
-#define NUM_ACTUATOR        17 // Number of actuator
+#define NUM_ACTUATOR        16 // Number of actuator
 #define MAX_POSITION        1023 // 最大値
 #define GOAL_SPEED          32  // GOAL_SPEEDのアドレス
 #define GOAL_POSITION       30  // GOAL_POSITIONのアドレス
@@ -31,14 +29,6 @@ byte  id[NUM_ACTUATOR]; // 使用するIDの配列
 
 // 基板上のLEDのフラグ
 int led_chk = 0;
-
-// ロボットの目のLED
-int eyeLed_R = 0;
-int eyeLed_G = 0;
-int eyeLed_B = 0;
-
-// 脱力指示のフラグ
-unsigned int torqueF = 0;
 
 // Dynamixel宣言
 Dynamixel Dxl(DXL_BUS_SERIAL1);
@@ -72,7 +62,7 @@ void setup() {
   Dxl.writeWord( BROADCAST_ID, GOAL_SPEED, 0 );
   Dxl.writeWord( BROADCAST_ID, GOAL_POSITION, AmpPos );
   
-  //処理速度を測るピン
+  //処理速度を測るLEDピン
   pinMode(BOARD_LED_PIN, OUTPUT);
 }
 
@@ -82,7 +72,7 @@ void setup() {
 
 void loop() {
   int error = 0 , i = 0;
-  short sv1[8],sv2[8],sv3[8];
+  short sv1[8],sv2[8];
 
   //アドレス:0～7の読み出し
   error = get_memmap8(0,sv1);
@@ -100,64 +90,32 @@ void loop() {
     }
   }
 
-  //アドレス:55～62の読み出し  
-  error = get_memmap8(55,sv3);
-  if (error==0){
-     GoalPos[16]= (word)sv3[0];
-     eyeLed_R = sv3[4];   
-     eyeLed_G = sv3[5];
-     eyeLed_B = sv3[6];
-     torqueF = sv3[7];    // アドレス62の脱力判定アドレス
-  }
 
   // １ループごとに点灯／消灯…(オシロで見たときに1ループの実測処理時間が分かる)
   led_chk = 1 - led_chk;
   digitalWrite(BOARD_LED_PIN, led_chk);
 
 
-  if (torqueF == 0){  // アドレス62の脱力判定がすべて0(脱力なし)の時
-     
-    // サーボ書き込み ******************
-    Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
-    Dxl.pushByte(GOAL_POSITION);
-    Dxl.pushByte(2);
-    //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
-    for( i=0; i<NUM_ACTUATOR; i++ ){
-      Dxl.pushByte(id[i]);
-      Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
-      Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
-    }
-    Dxl.flushPacket();    // 書き込み
-    
-    //書き込み時のエラー処理
-    if(!Dxl.getResult()){
-      // なにか処理する場合はここに書く
-    }
-    // サーボ書き込みここまで ****************** 
-    
+  // サーボ書き込み ******************
+  Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
+  Dxl.pushByte(GOAL_POSITION);
+  Dxl.pushByte(2);
+  //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
+  for( i=0; i<NUM_ACTUATOR; i++ ){
+    Dxl.pushByte(id[i]);
+    Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
+    Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
   }
-  else{  // 脱力指定が1つでもあるとき
-    
-    // サーボ書き込み ******************
-    Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
-    Dxl.pushByte(TORQUE_ENABLE);
-    Dxl.pushByte(1);
-    //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
-    for( i=0; i<NUM_ACTUATOR; i++ ){
-      Dxl.pushByte(id[i]);
-      Dxl.pushByte(0x00);
-    }
-    Dxl.flushPacket();    // 書き込み
-    
-    //書き込み時のエラー処理
-    if(!Dxl.getResult()){
-      // なにか処理する場合はここに書く
-    }
-    // サーボ書き込みここまで ****************** 
-
+  Dxl.flushPacket();    // 書き込み
+  
+  //書き込み時のエラー処理
+  if(!Dxl.getResult()){
+    // なにか処理する場合はここに書く
   }
-    
-  //delay(10);  いろいろタイムアウト待ちの処理があるのでわざわざ待ち時間を設けるのを廃止
+  // サーボ書き込みここまで ****************** 
+  
+      
+  //delay(10);  いろいろタイムアウト待ちの処理があるのでわざわざ待ち時間を設けるのを廃止(コメントアウト)
 }
 
 ////////////////////////////////////////////////////////////////
