@@ -30,6 +30,9 @@ byte  id[NUM_ACTUATOR]; // 使用するIDの配列
 // 基板上のLEDのフラグ
 int led_chk = 0;
 
+// 脱力指示のフラグ
+unsigned int torqueF = 0;
+
 // Dynamixel宣言
 Dynamixel Dxl(DXL_BUS_SERIAL1);
 
@@ -60,10 +63,17 @@ void setup() {
   
   //Set all dynamixels as same condition.
   Dxl.writeWord( BROADCAST_ID, GOAL_SPEED, 0 );
-  Dxl.writeWord( BROADCAST_ID, GOAL_POSITION, AmpPos );
+  //Dxl.writeWord( BROADCAST_ID, GOAL_POSITION, AmpPos ); //初期位置を送ってしまうとサーボが動いてしまうためコメントアウト
   
   //処理速度を測るLEDピン
   pinMode(BOARD_LED_PIN, OUTPUT);
+
+  delay(2000);    // VS-RC003の起動待ち2秒
+  //2秒後に読み出し3回(ホントは1回でいいハズだけど念のため)
+  get_memmap(0);  // 一発目の読み込みでエラーがでるので3回読み出し
+  get_memmap(0);  // 一発目の読み込みでエラーがでるので3回読み出し
+  get_memmap(0);  // 一発目の読み込みでエラーがでるので3回読み出し
+
 }
 
 ////////////////////////////////////////////////////////////////
@@ -72,11 +82,22 @@ void setup() {
 
 void loop() {
   int error = 0 , i = 0;
-  short sv1[8],sv2[8];
+  short sv1[8],sv2[8],torque_buf;
 
   //アドレス:0～7の読み出し
   error = get_memmap8(0,sv1);
-  if (error==0){
+  
+  // ひとつでも0が含まれていたらエラーとみなす
+  if (sv1[0]==0) error = 1;
+  if (sv1[1]==0) error = 1;
+  if (sv1[2]==0) error = 1;
+  if (sv1[3]==0) error = 1;
+  if (sv1[4]==0) error = 1;
+  if (sv1[5]==0) error = 1;
+  if (sv1[6]==0) error = 1;
+  if (sv1[7]==0) error = 1;
+  
+  if (error==0){  // 読みだした値がエラーじゃなければサーボ値に反映
     for(i=0; i < 8; i++ ){
       GoalPos[i]= (word)sv1[i];
     }
@@ -84,38 +105,75 @@ void loop() {
 
   //アドレス:8～15の読み出し  
   error = get_memmap8(8,sv2);
-  if (error==0){
+
+  // ひとつでも0が含まれていたらエラーとみなす
+  if (sv2[0]==0) error = 1;
+  if (sv2[1]==0) error = 1;
+  if (sv2[2]==0) error = 1;
+  if (sv2[3]==0) error = 1;
+  if (sv2[4]==0) error = 1;
+  if (sv2[5]==0) error = 1;
+  if (sv2[6]==0) error = 1;
+  if (sv2[7]==0) error = 1;
+  
+  if (error==0){  // 読みだした値がエラーじゃなければサーボ値に反映
     for(i=0; i < 8; i++ ){
       GoalPos[i+8]= (word)sv2[i];
     }
   }
 
 
+  // トルクオンかどうか アドレス251を読み出し(SELECT+STARTの対応)
+  torque_buf = get_memmap(251);
+  if (torque_buf==0) torqueF = 0;
+  if (torque_buf==1) torqueF = 1;
+
   // １ループごとに点灯／消灯…(オシロで見たときに1ループの実測処理時間が分かる)
   led_chk = 1 - led_chk;
   digitalWrite(BOARD_LED_PIN, led_chk);
 
 
-  // サーボ書き込み ******************
-  Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
-  Dxl.pushByte(GOAL_POSITION);
-  Dxl.pushByte(2);
-  //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
-  for( i=0; i<NUM_ACTUATOR; i++ ){
-    Dxl.pushByte(id[i]);
-    Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
-    Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
+  if (torqueF == 1){  // アドレス251の脱力判定が1(トルクON)の時
+     
+    // サーボ書き込み ******************
+    Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
+    Dxl.pushByte(GOAL_POSITION);
+    Dxl.pushByte(2);
+    //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
+    for( i=0; i<NUM_ACTUATOR; i++ ){
+      Dxl.pushByte(id[i]);
+      Dxl.pushByte(DXL_LOBYTE(GoalPos[i]));
+      Dxl.pushByte(DXL_HIBYTE(GoalPos[i]));
+    }
+    Dxl.flushPacket();    // 書き込み
+    
+    //書き込み時のエラー処理
+    if(!Dxl.getResult()){
+      // なにか処理する場合はここに書く
+    }
+    // サーボ書き込みここまで ****************** 
+    
   }
-  Dxl.flushPacket();    // 書き込み
-  
-  //書き込み時のエラー処理
-  if(!Dxl.getResult()){
-    // なにか処理する場合はここに書く
+  else{  // 脱力指定が1つでもあるとき
+    
+    // サーボ書き込み ******************
+    Dxl.initPacket(BROADCAST_ID, INST_SYNC_WRITE);
+    Dxl.pushByte(TORQUE_ENABLE);
+    Dxl.pushByte(1);
+    //push individual data length per 1 dynamixel, goal position needs 2 bytes(1word) 
+    for( i=0; i<NUM_ACTUATOR; i++ ){
+      Dxl.pushByte(id[i]);
+      Dxl.pushByte(0x00);
+    }
+    Dxl.flushPacket();    // 書き込み
+    
+    //書き込み時のエラー処理
+    if(!Dxl.getResult()){
+      // なにか処理する場合はここに書く
+    }
+    // サーボ書き込みここまで ****************** 
+
   }
-  // サーボ書き込みここまで ****************** 
-  
-      
-  //delay(10);  いろいろタイムアウト待ちの処理があるのでわざわざ待ち時間を設けるのを廃止(コメントアウト)
 }
 
 ////////////////////////////////////////////////////////////////
@@ -143,7 +201,7 @@ int get_memmap8(unsigned char map_add , short value[]) {
         }
 
 	//rコマンドのメッセージを作成
-	sprintf(wbuf, "r 20%04X 16\r\n", (2048 + (map_add * 2)));
+	sprintf(wbuf, "r 20%04x 16\r\n", (2048 + (map_add * 2)));
 
 	//送受信！
 	sendmessage(wbuf, rbuf);
